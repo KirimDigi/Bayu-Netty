@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="id" prefix="og: https://ogp.me/ns#">
 <head>
 	<meta charset="UTF-8">
@@ -11,10 +11,30 @@
 		}
 		window.scrollTo(0, 0);
 
-		// Hapus hash anchor (#cover dll) saat reload agar tidak otomatis loncat ke bagian tengah/bawah
+		// Hapus hash anchor (#cover dll) saat reload agar tidak otomatis loncat ke bagian tengah/bawah,
+		// TAPI PERTAHANKAN parameter nama tamu (seperti #to=, #dear=, #kepada=, #u=) agar URL dan nama tamu tidak hilang
 		if (window.location.hash) {
-			history.replaceState(null, null, window.location.pathname + window.location.search);
+			var h = window.location.hash;
+			var isGuestParam = /(?:[#&?])(to|dear|kepada|u)=/i.test(h);
+			if (!isGuestParam) {
+				history.replaceState(null, null, window.location.pathname + window.location.search);
+			}
 		}
+
+		// Pertahankan parameter nama tamu di URL saat tombol Buka Undangan diklik
+		document.addEventListener('click', function (e) {
+			var link = e.target.closest('#tombol-buka a, a[href="#cover"]');
+			if (link) {
+				var curHash = window.location.hash;
+				if (curHash && /(?:[#&?])(to|dear|kepada|u)=/i.test(curHash)) {
+					e.preventDefault();
+					var coverEl = document.getElementById('cover');
+					if (coverEl) {
+						coverEl.scrollIntoView({ behavior: 'smooth' });
+					}
+				}
+			}
+		});
 
 		window.addEventListener('beforeunload', function () {
 			window.scrollTo(0, 0);
@@ -344,30 +364,65 @@ fbq('init', '1380840439802436', {}, {
 					<h2 class="elementor-heading-title elementor-size-default">Nama Tamu</h2>				</div>
 				<script>
 				(function(){
+					function cleanGuest(str) {
+						if (!str) return '';
+						try {
+							str = str.replace(/\+/g, ' ');
+							return decodeURIComponent(str).trim();
+						} catch (e) {
+							try {
+								return decodeURI(str).trim();
+							} catch (e2) {
+								return str.trim();
+							}
+						}
+					}
 					function getGuest(){
 						if(window.location.search){
-							var p=new URLSearchParams(window.location.search);
-							var g=p.get('to')||p.get('dear')||p.get('kepada')||p.get('u');
-							if(g) return g;
+							try {
+								var p=new URLSearchParams(window.location.search);
+								var g=p.get('to')||p.get('dear')||p.get('kepada')||p.get('u');
+								if(g) return cleanGuest(g);
+							} catch(e){}
+							var mSearch = window.location.search.match(/[?&](?:to|dear|kepada|u)=([^&]+)/i);
+							if (mSearch && mSearch[1]) return cleanGuest(mSearch[1]);
 						}
 						if(window.location.hash){
 							var h=window.location.hash.replace(/^#\??/,'');
-							var hp=new URLSearchParams(h);
-							var g=hp.get('to')||hp.get('dear')||hp.get('kepada')||hp.get('u');
-							if(g) return g;
-							var m=h.match(/(?:to|dear|kepada|u)=([^&]+)/i);
+							var mPrefix = h.match(/^(?:to|dear|kepada|u)=(.*)$/i);
+							if (mPrefix && mPrefix[1]) {
+								var rawVal = mPrefix[1];
+								if (rawVal.indexOf('&') !== -1 && !/&(?:to|dear|kepada|u|modal)=/i.test(rawVal)) {
+									return cleanGuest(rawVal);
+								}
+							}
+							try {
+								var hp=new URLSearchParams(h);
+								var gh=hp.get('to')||hp.get('dear')||hp.get('kepada')||hp.get('u');
+								if(gh) return cleanGuest(gh);
+							} catch(e){}
+							var m=h.match(/(?:^|[?&#])(?:to|dear|kepada|u)=([^&#]+)/i);
 							if(m && m[1]){
-								try{return decodeURIComponent(m[1]);}catch(e){return m[1];}
+								return cleanGuest(m[1]);
 							}
 						}
+						try {
+							var saved = sessionStorage.getItem('guest_name');
+							if (saved) return saved;
+						} catch(e){}
 						return null;
 					}
 					var guest=getGuest();
 					if(guest){
+						try { sessionStorage.setItem('guest_name', guest); } catch(e){}
 						var el=document.getElementById('namatamu');
 						if(el){
 							var h2=el.querySelector('.elementor-heading-title')||el;
 							h2.textContent=guest;
+						}
+						var authorInput = document.getElementById('author');
+						if (authorInput && !authorInput.value) {
+							authorInput.value = guest;
 						}
 					}
 				})();
@@ -1837,28 +1892,51 @@ btnAmplop.onclick = function() {
 (function() {
   var activeGuestName = null;
 
+  function cleanGuest(str) {
+    if (!str) return '';
+    try {
+      str = str.replace(/\+/g, ' ');
+      return decodeURIComponent(str).trim();
+    } catch (e) {
+      try {
+        return decodeURI(str).trim();
+      } catch (e2) {
+        return str.trim();
+      }
+    }
+  }
+
   function parseGuestName() {
     // 1. Cek window.location.search (?to=..., ?dear=..., ?kepada=..., ?u=...)
     if (window.location.search) {
-      var searchParams = new URLSearchParams(window.location.search);
-      var val = searchParams.get('to') || searchParams.get('dear') || searchParams.get('kepada') || searchParams.get('u');
-      if (val) return val;
+      try {
+        var searchParams = new URLSearchParams(window.location.search);
+        var val = searchParams.get('to') || searchParams.get('dear') || searchParams.get('kepada') || searchParams.get('u');
+        if (val) return cleanGuest(val);
+      } catch (e) {}
+      var mSearch = window.location.search.match(/[?&](?:to|dear|kepada|u)=([^&]+)/i);
+      if (mSearch && mSearch[1]) return cleanGuest(mSearch[1]);
     }
 
     // 2. Cek window.location.hash (#to=..., #?to=..., dll)
     if (window.location.hash) {
       var hash = window.location.hash.replace(/^#\??/, '');
-      var hashParams = new URLSearchParams(hash);
-      var val = hashParams.get('to') || hashParams.get('dear') || hashParams.get('kepada') || hashParams.get('u');
-      if (val) return val;
-
-      var match = hash.match(/(?:to|dear|kepada|u)=([^&]+)/i);
-      if (match && match[1]) {
-        try {
-          return decodeURIComponent(match[1]);
-        } catch (e) {
-          return match[1];
+      var mPrefix = hash.match(/^(?:to|dear|kepada|u)=(.*)$/i);
+      if (mPrefix && mPrefix[1]) {
+        var rawVal = mPrefix[1];
+        if (rawVal.indexOf('&') !== -1 && !/&(?:to|dear|kepada|u|modal)=/i.test(rawVal)) {
+          return cleanGuest(rawVal);
         }
+      }
+      try {
+        var hashParams = new URLSearchParams(hash);
+        var val = hashParams.get('to') || hashParams.get('dear') || hashParams.get('kepada') || hashParams.get('u');
+        if (val) return cleanGuest(val);
+      } catch (e) {}
+
+      var match = hash.match(/(?:^|[?&#])(?:to|dear|kepada|u)=([^&#]+)/i);
+      if (match && match[1]) {
+        return cleanGuest(match[1]);
       }
     }
     return null;
